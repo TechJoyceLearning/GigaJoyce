@@ -1,6 +1,7 @@
 site_name: GigaJoyce
 site_description: Documentation for the GigaJoyce Discord bot
 site_author: GigaJoyce Team
+site_url: https://techjoycelearning.github.io/GigaJoyce/
 repo_url: https://github.com/TechJoyceLearning/GigaJoyce/
 
 theme:
