@@ -6,9 +6,8 @@ from settings.Setting import Setting
 
 
 class SelectSetting(Setting[str]):
-    """
-    A setting that allows the user to select one option from a predefined list.
-    """
+    """Single-select setting based on a predefined list of (label, value) options."""
+
 
     def __init__(
         self,
@@ -24,6 +23,21 @@ class SelectSetting(Setting[str]):
         locales: Optional[bool] = False,
         module_name: Optional[str] = None
     ):
+        """Initialize a SelectSetting.
+
+        Args:
+            name: Display name.
+            description: UX description.
+            id: Persistence key.
+            options: List of dicts with `{label, value}`.
+            value: Initial selected value.
+            max_values: Max selectable (kept for API parity, UI uses single select).
+            min_values: Min selectable.
+            color: Hex color for the embed.
+            permission: Optional permission flag/bit.
+            locales: Enable i18n of display strings.
+            module_name: Module context for translations.
+        """
         super().__init__(name=name, description=description, locales=locales, module_name=module_name, id=id, type_="select")
         self.options = options 
         self.value = value
@@ -35,8 +49,16 @@ class SelectSetting(Setting[str]):
         self.module_name = module_name
 
     async def run(self, view: InteractionView) -> str:
-        """
-        Runs the interactive session for selecting options.
+        """Render a dropdown list and return the selected string value.
+
+        Args:
+            view: Active interaction view.
+
+        Returns:
+            The selected option `value`.
+
+        Raises:
+            TimeoutError: When selection does not complete in time.
         """
         guild_id = str(view.interaction.guild.id)
         translate = await view.client.translator.get_translator(guild_id=guild_id)
@@ -114,19 +136,18 @@ class SelectSetting(Setting[str]):
         label = next((option["label"] for option in self.options if option["value"] == value), "N/A")
         return label
 
-    # def clone(self) -> "SelectSetting":
-    #     """
-    #     Clone the current instance.
-    #     """
-    #     return SelectSetting(
-    #         name=self.name,
-    #         description=self.description,
-    #         id=self.id,
-    #         options=self.options,
-    #         value=self.value,
-    #         max_values=self.max_values,
-    #         min_values=self.min_values,
-    #         color=self.color,
-    #         locales=self.locales,
-    #         module_name=self.module_name
-    #     )
+    def clone(self) -> "SelectSetting":
+        """Return a shallow clone preserving available options and i18n context."""
+        return SelectSetting(
+            name=self.name,
+            description=self.description,
+            id=self.id,
+            options=self.options[:],
+            value=self.value,
+            max_values=self.max_values,
+            min_values=self.min_values,
+            color=self.color,
+            permission=self.permission,
+            locales=self.locales,
+            module_name=self.module_name,
+        )

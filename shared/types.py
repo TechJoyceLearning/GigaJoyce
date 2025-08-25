@@ -9,7 +9,7 @@ import logging
 from collections import defaultdict
 from shared.async_lock import AsyncLock
 import asyncio
-# Importações dentro de TYPE_CHECKING para evitar execução direta
+
 if TYPE_CHECKING:
     from classes.structs.Guild import Guild
     from classes.structs.Member import Member
@@ -31,23 +31,21 @@ if TYPE_CHECKING:
     from utils.MessageView import MessageView
     from db.db import MongoDBAsyncORM
 
-# Estrutura básica de nó de override de permissões
+
 class OverrideNode(TypedDict):
     allow: List[str]
     deny: List[str]
 
 
-# Árvore de permissões recursiva
 PermissionOverrideTree = Dict[str, Union["PermissionOverrideTree", OverrideNode]]
 
 
-# Definição para um nó de permissão
 PermissionNode = Callable[
     [
-        "ExtendedClient",  # Referência ao cliente do bot
-        str,               # Caminho da permissão (ex.: "Commands.ban")
-        GuildMember,       # Membro sendo verificado
-        TextChannel        # Contexto do canal
+        "ExtendedClient",
+        str,
+        GuildMember,
+        Optional[TextChannel],
     ],
     Awaitable[bool]
 ]
@@ -82,9 +80,40 @@ class MessageViewUpdate(TypedDict):
 
 
 class ExtendedClient(Bot):
+    """Discord client extended.
+
+    Provides high-level services shared across the bot, such as logging, in-memory
+    caches, async locks, managers, a lightweight internal event bus, and command middleware.
+
+    Args:
+        logger: Root logger used to create component-specific child loggers.
+
+    Attributes:
+        db: Async MongoDB connection (see :class:`MongoDBAsyncORM`).
+        ready: Whether the first `on_ready` cycle has completed.
+        detailed_help: Optional mapping for extended help entries.
+        view_registry: Registry of interactive views keyed by an identifier.
+        setting_cache: In-memory cache for frequently accessed settings.
+        logger: Root logger instance.
+        global_lock: Process-wide async lock for critical sections.
+        flags_manager: Flags manager for feature toggles.
+        member_manager: Manager for guild members.
+        guild_manager: Manager for guild-level data.
+        slash_manager: Manager for slash commands.
+        permission_manager: Permission manager and resolver.
+        settings_manager: Settings manager and storage adapter.
+        command_middleware: List of async middlewares invoked before command execution.
+            If any middleware returns False, the command is aborted.
+        modules: Loaded modules keyed by module name.
+        cached_events: Internal event listeners keyed by event name.
+        module_handler: Dynamic module lifecycle handler.
+        command_handler: Prefix-command handler.
+        event_handler: Discord gateway event handler.
+        translator: Internationalization service.
+        emoji_manager: Emoji/assets manager.
+        _events: Internal event bus mapping from event name to listeners.
     """
-    An extended client class to manage bot-level attributes and functionalities.
-    """
+
 
     def __init__(self, *args, logger: logging.Logger, **kwargs):
         super().__init__(*args, **kwargs)
@@ -101,7 +130,7 @@ class ExtendedClient(Bot):
         # Locks and caches
         self.global_lock: AsyncLock = AsyncLock()
 
-        # Managers (serão tipados condicionalmente para evitar importações circulares)
+        # Managers
         self.flags_manager: "FlagsManager" = None
         self.member_manager: "MemberManager" = None
         self.guild_manager: "GuildManager" = None
@@ -146,16 +175,24 @@ class ExtendedClient(Bot):
         self.logger.error(f"Command error: {error}")
         
     def on(self, event: str, listener: Callable[..., Awaitable[Any]]):
-        """
-        Register a listener for an event.
+        """Register a listener on the client's internal event bus.
+
+        This is separate from `discord.py` events and is intended for module-level decoupling.
+
+        Args:
+            event: Logical internal event name.
+            listener: Async callable to be invoked when the event is emitted.
         """
         if event not in self._events:
             self._events[event] = []
         self._events[event].append(listener)
 
     def once(self, event: str, listener: Callable[..., Awaitable[Any]]):
-        """
-        Register a one-time listener for an event.
+        """Register a one-shot listener removed after its first invocation.
+
+        Args:
+            event: Internal event name.
+            listener: Async callable to run exactly once.
         """
         async def wrapper(*args, **kwargs):
             await listener(*args, **kwargs)
@@ -164,23 +201,34 @@ class ExtendedClient(Bot):
         self.on(event, wrapper)
 
     def emit(self, event: str, *args, **kwargs):
-        """
-        Emit an event and call all its listeners.
+        """Emit an internal event and schedule all listeners.
+
+        Listeners are scheduled via `asyncio.create_task`.
+
+        Args:
+            event: Internal event name.
+            *args: Positional arguments passed to listeners.
+            **kwargs: Keyword arguments passed to listeners.
         """
         if event in self._events:
             for listener in self._events[event]:
                 asyncio.create_task(listener(*args, **kwargs))
 
     def off(self, event: str, listener: Callable[..., Awaitable[Any]]):
-        """
-        Remove a specific listener from an event.
+        """Remove a specific listener from an internal event.
+
+        Args:
+            event: Internal event name.
+            listener: Previously registered listener.
         """
         if event in self._events and listener in self._events[event]:
             self._events[event].remove(listener)
 
     def remove_all_listeners(self, event: str = None):
-        """
-        Remove all listeners for a specific event, or all events if none is specified.
+        """Remove all listeners from an event, or from all events if none is given.
+
+        Args:
+            event: Optional internal event name. If None, clears all events.
         """
         if event:
             if event in self._events:

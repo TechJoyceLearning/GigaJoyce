@@ -9,6 +9,18 @@ import uuid
 
 
 class InteractionView(View, AsyncIOEventEmitter):
+    """Interactive Discord UI view that also emits custom events.
+
+    This view bridges `discord.ui.View` with an async event emitter, allowing
+    callers to listen for lifecycle events like `"end"` (timeout/deletion) while
+    still using standard Discord UI components (buttons/selects).
+
+    Features:
+      * Auto timeout and `"end"` emission with reason `"timeout"`.
+      * Listens for `on_message_delete` to end with reason `"deleted"`.
+      * Component `custom_id` normalization and namespacing with `view_id`.
+      * Ability to clone a view with the same behavior.
+    """
     def __init__(
         self,
         interaction: Interaction,
@@ -19,18 +31,18 @@ class InteractionView(View, AsyncIOEventEmitter):
         timeout: Optional[int] = 60,  # Timeout em segundos
         parent: Optional["InteractionView"] = None,
     ):
-        """
-        InteractionView gerencia visualizações interativas para um bot Discord e emite eventos personalizados.
+        """Create an `InteractionView`.
 
-        :param interaction: A interação inicial que gerou a view.
-        :param channel: O canal de texto onde a interação ocorreu.
-        :param client: A instância do cliente do bot.
-        :param ephemeral: Se a resposta deve ser efêmera.
-        :param filter_func: Função para filtrar interações.
-        :param timeout: Tempo limite para a view expirar.
-        :param parent: Referência para a view pai, se for um clone.
+        Args:
+            interaction: The original interaction that spawned this view.
+            channel: Text channel for context/logging.
+            client: Extended bot client.
+            ephemeral: Whether the response should be ephemeral.
+            filter_func: Optional predicate to filter accepted interactions.
+            timeout: Timeout (seconds) before this view ends automatically.
+            parent: Optional parent view if this is a clone.
         """
-        # Inicializa as classes pai
+
         View.__init__(self, timeout=timeout)
         AsyncIOEventEmitter.__init__(self)
 
@@ -40,47 +52,40 @@ class InteractionView(View, AsyncIOEventEmitter):
         self.ephemeral = ephemeral
         self.filter_func = filter_func or (lambda i: True)
         self.parent = parent
-
-        self.msg_id: Optional[str] = interaction.message.id if interaction.message else None
+        self.msg_id: Optional[str] = str(interaction.message.id) if interaction.message else None
         self.view_id: str = self._generate_random_id()
-
-        # Inicializa o atributo _timeout_task
         self._timeout_task: Optional[asyncio.Task] = None
 
-        # Registra o listener para exclusão de mensagens
         self.client.add_listener(self._handle_message_delete, "on_message_delete")
 
-        # Inicia o timeout da view
         if self.timeout is not None and self.timeout > 0:
             self.start_timeout()
 
-        # Debugging logs
         self.client.logger.debug(f"InteractionView initialized with view_id: {self.view_id}, message ID: {self.msg_id}, ephemeral: {self.ephemeral}")
 
     @staticmethod
     def _generate_random_id() -> str:
-        """
-        Gera um ID aleatório único para a view.
+        """Generate a unique identifier for this view instance.
 
-        :return: ID único como string.
+        Returns:
+            A UUID4 string.
         """
         return str(uuid.uuid4())
 
     async def on_timeout(self):
-        """
-        Método chamado quando a view expira (timeout).
-        Emite o evento 'end' com a razão 'timeout'.
+        """Called by discord.py when the view times out.
+
+        Emits the `"end"` event with reason `"timeout"` and destroys the view.
         """
         self.client.logger.debug(f"View with view_id {self.view_id} has timed out.")
         self.emit("end", "timeout")
         self.destroy("timeout")
 
     async def _handle_message_delete(self, message: Message):
-        """
-        Método chamado quando uma mensagem é deletada.
-        Emite o evento 'end' com a razão 'deleted' se a mensagem for a da view.
+        """Internal listener to end the view if its message was deleted.
 
-        :param message: Mensagem que foi deletada.
+        Args:
+            message: The deleted message.
         """
         if message.id == self.msg_id:
             self.client.logger.debug(f"Message with ID {self.msg_id} was deleted, triggering view destruction.")
@@ -88,30 +93,29 @@ class InteractionView(View, AsyncIOEventEmitter):
             self.destroy("deleted")
 
     def start_timeout(self):
-        """
-        Inicia ou reinicia o timeout da view.
-        """
+        """(Re)start the internal timeout task."""
         if self._timeout_task:
             self._timeout_task.cancel()
         self.client.logger.debug(f"Starting timeout for view with view_id: {self.view_id}")
         self._timeout_task = asyncio.create_task(self._timeout_handler())
 
     async def _timeout_handler(self):
-        """
-        Handler para gerenciar o timeout da view.
-        """
-        await asyncio.sleep(self.timeout)
+        """Sleep for `self.timeout` seconds then trigger `on_timeout`."""
+        await asyncio.sleep(self.timeout if self.timeout is not None else 0)
         await self.on_timeout()
 
     async def update(self, **kwargs) -> bool:
-        """
-        Atualiza a visualização com novos dados.
+        """Update the message associated with this view.
 
-        :param kwargs: Dados para atualização, como embeds e a view associada.
-        :return: True se a atualização for bem-sucedida, False caso contrário.
+        Keyword Args:
+            components: Optional iterable of components (Buttons/Selects) to add.
+            Any other arguments accepted by
+            `interaction.edit_original_response` or `interaction.response.send_message`.
+
+        Returns:
+            True if the update succeeds, False otherwise.
         """
         try:
-            # Limpa os componentes existentes, se especificado
             components = kwargs.pop("components", [])
             self.client.logger.debug(f"Updating view with components: {components}")
             self.clear_items()
@@ -119,7 +123,6 @@ class InteractionView(View, AsyncIOEventEmitter):
                 component = self._add_custom_id(component)
                 self.add_item(component)
 
-            # Atualiza ou envia uma mensagem dependendo do estado da interação
             if self.interaction.response.is_done():
                 await self.interaction.edit_original_response(view=self, **kwargs)
             else:
@@ -131,8 +134,16 @@ class InteractionView(View, AsyncIOEventEmitter):
             return False
 
     def _add_custom_id(self, component: Any) -> Any:
-        """
-        Garante que o componente tenha o `view_id` anexado ao `custom_id`.
+        """Ensure the component `custom_id` includes this view's `view_id`.
+
+        This namespaces component identifiers so callbacks can distinguish
+        between multiple active views.
+
+        Args:
+            component: A Discord UI component instance.
+
+        Returns:
+            The same component, potentially with a modified `custom_id`.
         """
         if hasattr(component, "custom_id") and component.custom_id:
             split_id = component.custom_id.split("-")
@@ -143,18 +154,23 @@ class InteractionView(View, AsyncIOEventEmitter):
         return component
     
     def normalize_custom_id(self, custom_id: str) -> str:
-        """
-        Remove a parte da `view_id` anexada ao `custom_id`, se existir.
+        """Strip the view_id suffix from a component `custom_id`, if present.
+
+        Args:
+            custom_id: The raw custom id from an interaction component.
+
+        Returns:
+            The normalized id without the view suffix.
         """
         normalized_id = custom_id.split("-")[0] if "-" in custom_id else custom_id
         self.client.logger.debug(f"Normalized custom_id: {custom_id} -> {normalized_id}")
         return normalized_id
     
     def clone(self) -> "InteractionView":
-        """
-        Clona esta instância de InteractionView.
+        """Create a shallow clone of this view.
 
-        :return: Nova instância de InteractionView clonada.
+        Returns:
+            A new `InteractionView` with the same config and `msg_id`.
         """
         self.client.logger.debug(f"Cloning InteractionView with view_id: {self.view_id}")
         cloned_view = InteractionView(
@@ -163,50 +179,49 @@ class InteractionView(View, AsyncIOEventEmitter):
             client=self.client,
             ephemeral=self.ephemeral,
             filter_func=self.filter_func,
-            timeout=self.timeout,
+            timeout=int(self.timeout) if self.timeout is not None else None,
             parent=self
         )
         cloned_view.set_msg_id(self.msg_id)
         return cloned_view
 
-    def set_msg_id(self, msg_id: str):
-        """
-        Define o ID da mensagem associada à view.
+    def set_msg_id(self, msg_id: Optional[str]):
+        """Attach a message id to this view instance.
 
-        :param msg_id: ID da mensagem.
+        Args:
+            msg_id: The Discord message id to associate.
         """
         self.msg_id = msg_id
         self.client.logger.debug(f"Message ID set for view: {msg_id}")
 
     def destroy(self, reason: Optional[str] = None):
-        """
-        Destroi a view e limpa os listeners.
+        """Tear down the view and unregister listeners.
 
-        :param reason: Razão para destruir a view.
+        Args:
+            reason: Optional reason for diagnostics (e.g., `"timeout"`).
         """
         if self._timeout_task:
             self._timeout_task.cancel()
             self._timeout_task = None
 
-        # Remove a view do registro, se existir
         if self.client.view_registry and self.msg_id in self.client.view_registry:
             del self.client.view_registry[self.msg_id]
 
         self.emit("end", reason or "destroy")
-        self.clear_items()  # Remove todos os componentes
+        self.clear_items() 
 
-        # Verifica se o evento foi registrado antes de tentar removê-lo
         if "on_message_delete" in self._events:
-            self.client.remove_listener("on_message_delete", self._handle_message_delete)
+            self.client.remove_listener(self._handle_message_delete, "on_message_delete")
 
-        self.stop()  # Para o timeout da view
+        self.stop()  
         self.client.logger.debug(f"InteractionView with view_id {self.view_id}, {reason}.")
     
     def set_extra_filter(self, filter_func: Callable[[Interaction], bool]):
-        """
-        Define uma função de filtro adicional para interações.
+        """Set an additional interaction filter predicate.
 
-        :param filter_func: Função que recebe uma interação e retorna um booleano.
+        Args:
+            filter_func: Callable that receives an `Interaction` and returns `True`
+                if it should be handled by this view, `False` otherwise.
         """
         self.filter_func = filter_func
         self.client.logger.debug(f"Extra filter function set for InteractionView {self.view_id}")

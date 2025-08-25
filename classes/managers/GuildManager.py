@@ -8,8 +8,12 @@ import logging
 
 
 class GuildManager:
-    """
-    Manages guild-specific data, including settings and caching.
+    """Manage guild-level data, settings materialization, and caching.
+
+    Responsibilities:
+        - Ensure a guild document exists in MongoDB.
+        - Merge module-declared default settings with DB values.
+        - Maintain an in-memory settings cache per guild.
     """
 
     def __init__(self, client: ExtendedClient, logger: logging.Logger):
@@ -18,8 +22,21 @@ class GuildManager:
         self.logger = logger
 
     async def fetch_or_create(self, guild_id: str, force: bool = False) -> Guild:
-        """
-        Fetches an existing guild profile or creates a new one.
+        """Fetch the Guild object with materialized settings, creating DB docs as needed.
+
+        Loads the Discord guild from cache or API, ensures a guild profile exists
+        in the `guilds` collection, and resolves the full settings map by combining
+        module defaults and stored values.
+
+        Args:
+            guild_id: The Discord guild id (stringable).
+            force: Reserved for future use (e.g., bypass certain caches).
+
+        Returns:
+            A :class:`Guild` wrapper with `guild`, `data`, and `settings` populated.
+
+        Raises:
+            ValueError: If the Discord guild cannot be found.
         """
         guild_id = str(guild_id)
         if not self.client.is_ready():
@@ -44,36 +61,64 @@ class GuildManager:
         return Guild(self.client, guild, guild_data, settings)
     
     async def fetch_all_members(self, guild_id: int) -> List[Dict[str, Any]]:
+        """Fetching all members for a given guild.
+
+        Args:
+            guild_id: The Discord guild id.
+
+        Returns:
+            A list of member profile dicts or manager-defined structures.
         """
-        Delegates fetching all members for a specific guild to the MemberManager.
-        """
-        return await self.client.member_manager.fetch_all_members(guild_id)
+        gid = str(guild_id)
+        return await self.client.db.find("members", {"guildId": gid})
 
     async def fetch_guild_data(self, guild_id: str) -> Dict[str, Any]:
-        """
-        Fetches guild data from the database.
+        """Fetch the guild document from MongoDB.
+
+        Args:
+            guild_id: The Discord guild id.
+
+        Returns:
+            The guild document or None if not found.
         """
         return await self.client.db.find_one("guilds", {"_id": guild_id})
 
     async def create_guild_data(self, guild_data: Dict[str, Any]):
-        """
-        Creates a new guild data entry in the database.
+        """Insert a new guild document in MongoDB.
+
+        Args:
+            guild_data: Initial document to insert.
+
+        Returns:
+            The inserted id or driver-specific result.
         """
         return await self.client.db.insert_one("guilds", guild_data)
 
     async def get_language(self, guild_id: str) -> str:
-        """
-        Fetches the language setting for a guild from the database.
-        Defaults to 'en' if not explicitly set.
+        """Return the guild's language from settings, defaulting to 'en'.
+
+        Args:
+            guild_id: The Discord guild id.
+
+        Returns:
+            The ISO code of the language, e.g., "en".
         """
         guild_data = await self.fetch_or_create(guild_id)
 
         return guild_data.data.get("settings", {}).get("language", "en")
 
     async def _get_all_settings(self, guild_data: Dict[str, Any], guild: DiscordGuild) -> Dict[str, Setting]:
-        """
-        Combina definições de configuração do módulo com valores armazenados no banco.
-        Cria valores padrão sob demanda, se necessário.
+        """Materialize the full settings map for a guild.
+
+        Combines module-declared settings with values retrieved from the database.
+        If a default value is missing in the DB, parses and stores the default.
+
+        Args:
+            guild_data: The guild document from MongoDB.
+            guild: The Discord guild.
+
+        Returns:
+            A mapping from setting id to `Setting` instances with `value` resolved.
         """
         settings_map = {}
         db_settings = guild_data.get("settings", {})
@@ -117,28 +162,40 @@ class GuildManager:
         return settings_map
 
 
-
-
     async def find_by_kv(self, filter: Dict[str, Any]) -> List[Guild]:
-        """
-        Finds guilds based on key-value filters.
+        """Find guilds matching a filter and return their materialized profiles.
+
+        Prefers `_id` as the guild id key but tolerates legacy documents using `id`.
+        Each result is hydrated with settings (merged defaults + DB values) and
+        cached under `setting_cache` keyed by the string guild id.
+
+        Args:
+            filter: Mongo‑style filter applied to the `guilds` collection.
+
+        Returns:
+            A list of `Guild` wrappers with `guild`, `data`, and `settings` populated.
         """
         guild_profiles = await self.client.db.find("guilds", filter)
         guilds = []
         for profile in guild_profiles:
-            guild = self.client.get_guild(int(profile["id"])) or await self.client.fetch_guild(int(profile["id"]))
+            gid = str(profile.get("_id") or profile.get("id"))  # tolerate both, prefer _id
+            if not gid:
+                continue
+            guild = self.client.get_guild(int(gid)) or await self.client.fetch_guild(int(gid))
             if not guild:
                 continue
-            settings = self.setting_cache.get(guild.id) or await self._get_all_settings(profile, guild)
-            self.setting_cache[guild.id] = settings
+            settings = self.setting_cache.get(gid) or await self._get_all_settings(profile, guild)
+            self.setting_cache[gid] = settings
             guilds.append(Guild(self.client, guild, profile, settings))
 
         self.logger.info(f"Found {len(guilds)} guilds matching filter {filter}.")
         return guilds
 
     def invalidate_cache(self, guild_id: str):
-        """
-        Invalidates the settings cache for a specific guild.
+        """Invalidate the in-memory settings cache for a guild.
+
+        Args:
+            guild_id: The Discord guild id (stringable).
         """
         if guild_id in self.setting_cache:
             del self.setting_cache[guild_id]

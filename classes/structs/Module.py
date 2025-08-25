@@ -7,8 +7,11 @@ from settings.Setting import Setting
 from shared.types import Manifest, ExtendedClient
 
 class Module:
-    """
-    Represents a loaded module, with commands, settings, and other properties.
+    """Container for a loaded feature module.
+
+    Holds metadata (name, description, version, color), the module's interface
+    returned by its `setup()` function, exported commands (text and slash),
+    guild/user settings, and event listeners registered by the module.
     """
 
     def __init__(
@@ -26,6 +29,23 @@ class Module:
         settings: Optional[List[Setting[Any]]] = None,
         user_settings: Optional[List[Setting[Any]]] = None,
     ):
+        """Initialize the module container.
+
+        Args:
+            name: Human‑readable module name.
+            path: Absolute/relative filesystem path to the module directory.
+            description: Short description of the module purpose.
+            version: Semantic version string.
+            color: Hex color (used in embeds or UI).
+            logger: Logger used for this module.
+            init_func: Callable returned by the module's `setup()` (executed via `initialize`).
+            data: Parsed manifest describing folders and metadata.
+            commands: Maps of commands grouped by kind, e.g. {"text": {}, "slash": {}}.
+            interfacer: Arbitrary interface object/dict exported by the module.
+            settings: Guild‑scoped settings declared by the module.
+            user_settings: Member‑scoped settings declared by the module.
+        """
+
         self.name = name
         self.path = path
         self.description = description
@@ -40,14 +60,17 @@ class Module:
         self.user_settings = user_settings or []
         self.events: List[Dict[str, Callable]] = []  # Store registered events
 
+
     async def unload(self, bot: commands.Bot, sync: Optional[str] = None, guild_id: Optional[str] = None):
-        """
-        Unloads the module's commands and events from the bot.
+        """Unload this module's commands and events from the bot.
+
+        Removes all registered text and slash commands and detaches listeners
+        previously recorded via `register_event`.
 
         Args:
-            bot (commands.Bot): A instância do bot.
-            sync (Optional[str]): Pode ser 'global' para sincronização global ou 'guild' para uma guild específica.
-            guild_id (Optional[str]): ID da guild para sincronização (se aplicável).
+            bot: Discord bot/client instance.
+            sync: Optional post‑unload sync mode: `"global"` or `"guild"`.
+            guild_id: Guild id to sync if `sync == "guild"`.
         """
         for command_name, command in self.commands["text"].items():
             bot.remove_command(command.name)
@@ -78,13 +101,12 @@ class Module:
 
 
     async def reload(self, bot: commands.Bot, sync: Optional[str] = None, guild_id: Optional[int] = None):
-        """
-        Reloads the module by unloading and reloading its commands and events.
+        """Reload the module by unloading then re‑wiring commands and events.
 
         Args:
-            bot (commands.Bot): A instância do bot.
-            sync (Optional[str]): Tipo de sincronização. Pode ser 'none', 'global', ou 'guild'.
-            guild_id (Optional[int]): ID da guild para sincronização se `sync` for 'guild'.
+            bot: Discord bot/client instance.
+            sync: Post‑reload sync mode: `'none'`, `'global'`, or `'guild'`.
+            guild_id: Guild id to sync if `sync == 'guild'`.
         """
         await self.unload(bot)
 
@@ -109,25 +131,43 @@ class Module:
         
 
     def register_event(self, event: str, func: Callable):
-        """
-        Registers an event listener for this module.
+        """Record an event listener belonging to this module.
+
+        The handler is later removed during `unload`.
+
+        Args:
+            event: Discord.py event name, e.g. `"on_message"`.
+            func: Listener callable.
         """
         self.events.append({"event": event, "func": func})
 
     def add_setting(self, setting: Setting[Any]):
-        """
-        Adds a setting to the module's settings.
+        """Add a guild‑scoped setting declared by the module.
+
+        Args:
+            setting: A `Setting` instance to append.
         """
         self.settings.append(setting)
 
     def add_user_setting(self, setting: Setting[Any]):
-        """
-        Adds a user-specific setting to the module's user settings.
+        """Add a member‑scoped setting declared by the module.
+
+        Args:
+            setting: A `Setting` instance to append.
         """
         self.user_settings.append(setting)
 
     async def initialize(self, client: "ExtendedClient", module_data: Any):
-        """
-        Calls the module's initialization function.
+        """Execute the module’s initialization function.
+
+        The `init_func` is the callable returned by the module's `setup()` and is
+        responsible for returning the `interfacer` (helpers the module exposes).
+
+        Args:
+            client: Extended bot client.
+            module_data: Arbitrary data passed from the loader.
+
+        Returns:
+            None. The `interfacer` is stored on the instance.
         """
         self.interfacer = await self.init_func(client, module_data, self.logger)

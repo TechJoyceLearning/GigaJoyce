@@ -5,15 +5,17 @@ from discord import (
     TextChannel,
 )
 from discord.ui import Button
-from typing import Optional, Any
+from typing import Optional, Any, Callable
 from utils.InteractionView import InteractionView
 from settings.Setting import Setting
 import asyncio
 
 
 class NumberSetting(Setting[int]):
-    """
-    A setting that allows for configuring a numerical value interactively.
+    """Interactive numeric setting.
+
+    Allows the user to input a single integer value through an interactive flow,
+    validating bounds and showing a preview of the new value before saving.
     """
 
     def __init__(
@@ -22,16 +24,29 @@ class NumberSetting(Setting[int]):
         description: str,
         id: str,
         value: Optional[int] = None,
-        minValue: Optional[int] = float('-inf'),
-        maxValue: Optional[int] = float('inf'),
+        minValue: Optional[int] = None,
+        maxValue: Optional[int] = None,
         color: Optional[str] = "#ffffff",
         locales: Optional[bool] = False,
         module_name: Optional[str] = None,
     ):
+        """Initialize a NumberSetting.
+
+        Args:
+            name: Display name.
+            description: UX description.
+            id: Persistence key.
+            value: Initial value.
+            minValue: Minimum allowed value (inclusive).
+            maxValue: Maximum allowed value (inclusive).
+            color: Hex color for the embed.
+            locales: Enable i18n of display strings.
+            module_name: Module context for translations.
+        """
         super().__init__(name=name, description=description, locales=locales, module_name=module_name, id=id, type_="number")
         self.value = value
-        self.minValue = minValue
-        self.maxValue = maxValue
+        self.minValue = minValue if minValue is not None else -2**31
+        self.maxValue = maxValue if maxValue is not None else 2**31 - 1
         self.color = color
         self.locales = locales
         self.module_name = module_name
@@ -153,22 +168,23 @@ class NumberSetting(Setting[int]):
         """
         return int(config)
 
-    def parse_to_field(self, value: int, translator: Optional[callable] = None) -> str:
+    def parse_to_field(self, value: int, translator: Optional[Callable] = None) -> str:
         """
         Parse the value to a displayable string format.
         """
-        return f"{translator('current_value')}: {value}"
+        label = translator('current_value') if translator is not None else "Current value"
+        return f"{label}: {value}"
 
     def clone(self) -> "NumberSetting":
-        """
-        Clone the current instance.
-        """
+        """Return a shallow clone preserving bounds and i18n context."""
         return NumberSetting(
             name=self.name,
             description=self.description,
             id=self.id,
             value=self.value,
-            maxValue=self.maxValue,
             minValue=self.minValue,
+            maxValue=self.maxValue,
             color=self.color,
+            locales=self.locales,
+            module_name=self.module_name,
         )

@@ -26,6 +26,11 @@ from modules.Defaults.permissionNamespace import *
 # Argument Parsing
 # -----------------------------------------------------------------------------
 def parse_args():
+    """Parse command line arguments.
+
+    Returns:
+        Parsed arguments including the debug flag used to control logging verbosity.
+    """
     parser = argparse.ArgumentParser(description="Discord Bot")
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
     return parser.parse_args()
@@ -59,6 +64,18 @@ logger.info("Logger initialized.")
 # Bot Initialization
 # -----------------------------------------------------------------------------
 class Bot(ExtendedClient): 
+    """Discord client with database, managers, handlers and i18n.
+
+    Args:
+        logger: Root logger used to create component specific child loggers.
+
+    Attributes:
+        session: Shared aiohttp session for outbound HTTP requests.
+        db: MongoDBAsyncORM instance for persistence.
+        detailed_help: Optional mapping for extended help entries.
+        setting_cache: In‑memory cache for frequently accessed settings.
+        ready: Indicates whether the bot finished the first on_ready cycle.
+    """
     def __init__(self, logger: logging.Logger):
         intents = Intents.default()
         intents.message_content = True 
@@ -72,8 +89,10 @@ class Bot(ExtendedClient):
         self.ready = False
 
     async def setup_hook(self):
-        """
-        Initial setup for the bot before it becomes ready.
+        """Initialize external services and internal subsystems before the bot is ready.
+
+        This connects to MongoDB, prepares HTTP session, instantiates managers and handlers,
+        registers default permission namespaces, loads modules, then offers slash command sync.
         """
         # Initialize MongoDB connection
         self.logger.info("Connecting to MongoDB...")
@@ -134,9 +153,12 @@ class Bot(ExtendedClient):
         await self.sync_slash_commands()
 
     async def sync_slash_commands(self):
+        """Interactively synchronize slash commands.
+
+        Offers options to sync globally, to specific guilds, to the configured test guild,
+        or to skip syncing. Consider a non‑interactive flag for headless deployments.
         """
-        Prompt the user to sync slash commands globally or for specific guilds.
-        """
+
         print("\nChoose a sync option for slash commands:")
         print("1. Sync globally (all servers)")
         print("2. Sync to a specific guild")
@@ -167,9 +189,7 @@ class Bot(ExtendedClient):
             self.logger.error(f"Failed to sync slash commands: {e}")
             
     async def _populate_language_cache(self):
-        """
-        Preload all guild languages into the Translator's cache.
-        """
+        """Preload per‑guild language into the Translator cache."""
         self.logger.info("Populating language cache...")
         # self.logger.info(f"Guilds: {self.guilds}")
         try:
@@ -183,14 +203,21 @@ class Bot(ExtendedClient):
         self.logger.info("Language cache populated.")
 
     def get_logger(self, name: str) -> logging.Logger:
-        """
-        Returns a logger with the given name, scoped to the bot's logger.
+        """Return a child logger derived from the bot's root logger.
+
+        Args:
+            name: Name suffix for the child logger.
+
+        Returns:
+            A configured child logger.
         """
         return self.logger.getChild(name)
 
     async def on_ready(self):
-        """
-        Called when the bot is ready.
+        """Run one‑time tasks after the bot connects for the first time.
+
+        Sets presence, warms the language cache, refreshes translation data,
+        and flips the internal ready flag.
         """
         if not self.ready:
             self.logger.info(f"Bot connected as {self.user}")

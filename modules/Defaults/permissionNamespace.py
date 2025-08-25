@@ -2,18 +2,19 @@ from typing import Optional
 from discord import Member as GuildMember, TextChannel
 from shared.types import ExtendedClient
 
-def RolesNamespace(client: ExtendedClient, node: str, member: GuildMember, channel: Optional[TextChannel]) -> bool:
-    """
-    Check if a GuildMember has a specific role based on the node.
+async def RolesNamespace(client: ExtendedClient, node: str, member: GuildMember, channel: Optional[TextChannel]) -> bool:
+    """Return True if the member has the role id referenced in the permission path.
+
+    Expected path shape: "Role.<role_id>" or "Role.*" for wildcard nodes higher up the tree.
 
     Args:
-        client (ExtendedClient): The bot client.
-        node (str): The hierarchical permission node (e.g., "Role.<role_id>").
-        member (GuildMember): The member to check.
-        channel (Optional[TextChannel]): The channel where the permission is being checked.
+        client: Bot client.
+        node: Permission path, for example "Role.1234567890".
+        member: Member to check.
+        channel: Optional channel context, unused here.
 
     Returns:
-        bool: True if the member has the specified role, False otherwise.
+        True if `member` has the role with the given id, False otherwise.
     """
     broken = node.split(".")
     role_id = broken.pop()
@@ -21,18 +22,19 @@ def RolesNamespace(client: ExtendedClient, node: str, member: GuildMember, chann
         return False
     return any(role.id == int(role_id) for role in member.roles)
 
-def ChannelsNamespace(client: ExtendedClient, node: str, member: GuildMember, channel: Optional[TextChannel]) -> bool:
-    """
-    Check if a TextChannel matches the specific node.
+async def ChannelsNamespace(client: ExtendedClient, node: str, member: GuildMember, channel: Optional[TextChannel]) -> bool:
+    """Return True if the current channel matches the id referenced in the permission path.
+
+    Expected path shape: "Channel.<channel_id>".
 
     Args:
-        client (ExtendedClient): The bot client.
-        node (str): The hierarchical permission node (e.g., "Channel.<channel_id>").
-        member (GuildMember): The member to check (not used here).
-        channel (Optional[TextChannel]): The channel where the permission is being checked.
+        client: Bot client.
+        node: Permission path, for example "Channel.1234567890".
+        member: Member to check, unused here.
+        channel: Channel context for the comparison.
 
     Returns:
-        bool: True if the channel matches the specified channel_id, False otherwise.
+        True if `channel.id` equals the id in the path, False otherwise.
     """
     broken = node.split(".")
     channel_id = broken.pop()
@@ -40,18 +42,19 @@ def ChannelsNamespace(client: ExtendedClient, node: str, member: GuildMember, ch
         return False
     return channel.id == int(channel_id)
 
-def UsersNamespace(client: ExtendedClient, node: str, member: GuildMember, channel: Optional[TextChannel]) -> bool:
-    """
-    Check if a GuildMember matches a specific user ID in the node.
+async def UsersNamespace(client: ExtendedClient, node: str, member: GuildMember, channel: Optional[TextChannel]) -> bool:
+    """Return True if the member id matches the id referenced in the permission path.
+
+    Expected path shape: "User.<user_id>".
 
     Args:
-        client (ExtendedClient): The bot client.
-        node (str): The hierarchical permission node (e.g., "User.<user_id>").
-        member (GuildMember): The member to check.
-        channel (Optional[TextChannel]): The channel where the permission is being checked (not used here).
+        client: Bot client.
+        node: Permission path, for example "User.1234567890".
+        member: Member to check.
+        channel: Optional channel context, unused here.
 
     Returns:
-        bool: True if the member's ID matches the specified user_id, False otherwise.
+        True if `member.id` equals the id in the path, False otherwise.
     """
     broken = node.split(".")
     user_id = broken.pop()

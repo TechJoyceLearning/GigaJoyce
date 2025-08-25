@@ -40,8 +40,19 @@ class ChannelSetting(Setting[GuildChannel]):
         self.module_name = module_name
 
     async def run(self, view: InteractionView) -> Optional[GuildChannel]:
-        """
-        Starts an interactive session to modify the channel setting.
+        """Initialize a `ChannelSetting`.
+
+        Args:
+            name: Display name.
+            description: Description text.
+            id: Persistence key.
+            channel_types: Allowed channel classes (default: `[TextChannel]`).
+            value: Preselected channel.
+            max_values: Max selections in the Select.
+            min_values: Min selections in the Select.
+            color: Hex embed color.
+            locales: Enable i18n of display strings.
+            module_name: Module context for translations.
         """
         guild_id = str(view.interaction.guild.id)
         translate = await view.client.translator.get_translator(guild_id=guild_id)

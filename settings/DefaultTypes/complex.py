@@ -15,22 +15,38 @@ T = TypeVar("T")
 
 
 def map_schema(schema: Dict[str, Setting[Any]]) -> Dict[str, Setting[Any]]:
-    """
-    Map the schema to a dictionary for easier access.
+    """Normalize a schema to an ordered dict for deterministic iteration.
+
+    Args:
+        schema: Mapping of field key -> `Setting`.
+
+    Returns:
+        Ordered mapping suitable for stable rendering / iteration.
     """
     return OrderedDict(schema)
 
 
 def chunk_arr(arr: List[Any], size: int) -> List[List[Any]]:
-    """
-    Chunk an array into smaller arrays of a given size.
+    """Split a list into chunks of size `size`.
+
+    Args:
+        arr: Input list.
+        size: Chunk size.
+
+    Returns:
+        List of chunks.
     """
     return [arr[i:i + size] for i in range(0, len(arr), size)]
 
 
 def check_filled_schema(current_config: "ComplexSetting") -> bool:
-    """
-    Checks if all required fields in the schema are filled.
+    """Check if all required schema fields are present in `.value`.
+
+    Args:
+        current_config: The complex setting instance.
+
+    Returns:
+        True if all required fields are filled; otherwise False.
     """
     for key, value in current_config.schema.items():
         if not current_config.value.get(key) and key not in (current_config.optionals or []):
@@ -39,15 +55,27 @@ def check_filled_schema(current_config: "ComplexSetting") -> bool:
 
 
 def clone_schema(schema: Dict[str, T]) -> Dict[str, T]:
-    """
-    Clone the schema, ensuring each element is also cloned.
+    """Deep‑clone a schema by calling `.clone()` on each child setting.
+
+    Args:
+        schema: Original mapping.
+
+    Returns:
+        New ordered mapping with cloned children.
     """
     return OrderedDict({key: value.clone() for key, value in schema.items()})
 
 
 class ComplexSetting(Setting[Dict[str, Any]]):
-    """
-    A setting that allows for a complex, nested configuration.
+    """A composite setting that edits a dict of child settings interactively.
+
+    Renders one button per child field; clicking a button opens the child
+    setting UI. A **Confirm** button validates required fields and finalizes.
+
+    Attributes:
+        schema: Ordered map of field key -> child `Setting`.
+        update_fn: Callable (sync or async) that builds the current summary embed.
+        optionals: Optional list of keys that are not required.
     """
 
     def __init__(
@@ -62,6 +90,19 @@ class ComplexSetting(Setting[Dict[str, Any]]):
         locales: Optional[bool] = False,
         module_name: Optional[str] = None,
     ):
+        """Initialize a `ComplexSetting`.
+
+        Args:
+            name: Display name.
+            description: Description for UX.
+            id: Persistence key.
+            schema: Child settings map (one button per key).
+            update_fn: Function that summarizes current state into an embed.
+            optionals: Keys that may be omitted.
+            value: Initial value (defaults to `{}`).
+            locales: Enable i18n of display strings.
+            module_name: Module context for translations/emojis.
+        """
         super().__init__(name=name, description=description, locales=locales, module_name=module_name, id=id, type_="complex")
         self.schema = map_schema(schema)
         self.update_fn = update_fn
@@ -71,8 +112,19 @@ class ComplexSetting(Setting[Dict[str, Any]]):
         self.module_name = module_name
 
     async def run(self, view: InteractionView) -> Dict[str, Any]:
-        """
-        Executes the interactive session for the complex setting.
+        """Render the complex editor and handle child edits/confirmation.
+
+        Flow:
+            1. Build a summary embed via `update_fn`.
+            2. Render a button for each `schema` key; clicking opens the child.
+            3. Confirm validates required fields via `check_filled_schema`.
+            4. On success, closes the view and returns the dict.
+
+        Args:
+            view: Active `InteractionView`.
+
+        Returns:
+            Final dictionary value.
         """
         
         guild_id = str(view.interaction.guild.id)

@@ -5,25 +5,35 @@ from settings.Setting import Setting
 from typing import Optional, Callable
 
 class EmbedSettingFile(Setting[Embed]):
-    """
-    Setting for configuring an embed interactively.
-    """
+    """Interactive setting for building a Discord `Embed` with a wizard."""
 
     def __init__(self, name: str, description: str, id: str, module_name: str = None, locales: Optional[bool] = False, value: Embed = None):
+        """Initialize an `EmbedSettingFile`.
+
+        Args:
+            name: Display name.
+            description: UX text.
+            id: Persistence key.
+            module_name: Module context for translations.
+            locales: Enable i18n of display strings.
+            value: Initial embed (used to prefill the editor).
+        """
         super().__init__(name=name, description=description, id=id, type_="embed")
         self.value = value
         self.module_name = module_name
         self.locales = locales
 
     async def run(self, view: InteractionView) -> Embed:
-        """
-        Runs the interactive embed creation process.
+        """Open the interactive embed creator and return the result.
 
         Args:
-            view (InteractionView): The interaction view for the process.
+            view: Active `InteractionView`.
 
         Returns:
-            Embed: The resulting embed object.
+            The resulting `Embed`.
+
+        Raises:
+            ValueError: If creation is aborted or fails.
         """
         guild_id = str(view.interaction.guild.id)
         translate = await view.client.translator.get_translator(guild_id=guild_id)
@@ -41,7 +51,8 @@ class EmbedSettingFile(Setting[Embed]):
                 "shouldComplete": True,
                 "data": self.value.to_dict() if self.value else None,
             },
-        ).catch(lambda _: None)
+        ).catch(lambda _: None
+                )
 
         if not embed:
             raise ValueError(translate("error.failed_to_create_embed"))

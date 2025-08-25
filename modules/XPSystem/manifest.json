@@ -3,7 +3,7 @@
   "description": "XP system module",
   "version": "1.0.0",
   "color": "#ABCDEF",
-  "initFile": "main.py",
+  "initFile": "init.py",
   "commandsFolder": "commands",
   "eventsFolder": "events",
   "translationsFolder":  "translations"

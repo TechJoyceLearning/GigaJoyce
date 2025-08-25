@@ -1,0 +1,59 @@
+site_name: GigaJoyce
+site_description: Documentation for the GigaJoyce Discord bot
+site_author: GigaJoyce Team
+repo_url: https://github.com/TechJoyceLearning/GigaJoyce/
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.instant
+    - content.code.copy
+    - content.tooltips
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.magiclink
+
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: true
+            inherited_members: true
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - How to run: how-to-run.md
+      - Configuration: configuration.md
+  - Architecture:
+      - Overview: architecture.md
+      - Handlers: handlers.md
+      - Utils: utils.md
+      - Settings types: settings-types.md
+      - XP system: xp.md
+      - Database: database.md
+  - Modules:
+      - Writing modules: modules.md
+  - Examples:
+      - Economy: examples/economy.md
+  - API Reference:
+      - Handlers: api/handlers.md
+      - Managers: api/managers.md
+      - Classes: api/classes.md
+      - Utils: api/utils.md
+      - Settings:
+          - Base: api/settings/base.md
+          - Default Types: api/settings/default-types.md
+      - Main: api/main.md
+  - Contributing: contributing.md

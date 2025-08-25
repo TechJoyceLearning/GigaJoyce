@@ -5,18 +5,34 @@ from classes.structs.SlashCommand import SlashCommand
 
 class SlashManager:
     """
-    Manages the registration of SlashCommands for the bot.
+    Helper for registering :class:`classes.structs.SlashCommand.SlashCommand` objects.
+
+    This manager wires slash commands into the client's command tree and performs
+    the necessary sync operations (globally or per-guild).
     """
     def __init__(self, client: Client):
+        """
+        Parameters
+        ----------
+        client:
+            The Discord client/bot that owns the command tree.
+        """
         self.client = client
         self.logger = logging.getLogger("SlashManager")
 
     async def register_global_commands(self, commands: List[SlashCommand]):
         """
-        Register global slash commands.
+        Register and sync a list of slash commands **globally**.
 
-        Args:
-            commands (List[SlashCommand]): A list of slash commands to register globally.
+        Parameters
+        ----------
+        commands:
+            List of :class:`classes.structs.SlashCommand.SlashCommand` instances
+            to be added to the application's global command tree.
+
+        Notes
+        -----
+        Discord caches global commands and propagation can take some minutes.
         """
         try:
             if not isinstance(commands, list):
@@ -38,11 +54,18 @@ class SlashManager:
 
     async def register_commands_for_guild(self, commands: List[SlashCommand], guild_ids: List[int]):
         """
-        Register commands for specific guilds.
+        Register and sync slash commands **for specific guilds**.
 
-        Args:
-            commands (List[SlashCommand]): Slash commands to register.
-            guild_ids (List[int]): Guild IDs where they will be registered.
+        Parameters
+        ----------
+        commands:
+            List of :class:`classes.structs.SlashCommand.SlashCommand` instances.
+        guild_ids:
+            Guild IDs where the commands should be registered.
+
+        Notes
+        -----
+        Guild-specific sync is near-instant and ideal for testing.
         """
         try:
             if not isinstance(commands, list):

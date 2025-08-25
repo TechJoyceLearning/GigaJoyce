@@ -1,8 +1,10 @@
 from typing import Optional, Callable, Dict
 
 class CommandHelp:
-    """
-    Classe para definir ajuda detalhada de comandos com suporte a múltiplos idiomas.
+    """Rich, localized help metadata for a command.
+
+    Stores per‑language dictionaries with keys such as `description`, `usage`,
+    and `examples`. Retrieval is language‑aware with a safe fallback to English.
     """
 
     def __init__(
@@ -10,38 +12,42 @@ class CommandHelp:
         name: str, 
         translations: Dict[str, Dict[str, Optional[str]]]
     ):
-        """
-        Inicializa o CommandHelp com traduções.
+        """Initialize a `CommandHelp` descriptor.
 
         Args:
-            name (str): Nome do comando.
-            translations (Dict[str, Dict[str, Optional[str]]]): 
-                Dicionário onde a chave é o código do idioma e o valor é outro dicionário contendo 'description', 'usage', e 'examples'.
-                Exemplo:
-                {
-                    "en": {
-                        "description": "Shows the current XP and level of a user.",
-                        "usage": "/xp [user]",
-                        "examples": ["/xp", "/xp @User123"]
-                    },
-                    "pt": {
-                        "description": "Mostra o XP atual e o nível de um usuário.",
-                        "usage": "/xp [usuário]",
-                        "examples": ["/xp", "/xp @Usuario123"]
+            name: Command name this help refers to.
+            translations: Mapping of language code → help fields. Expected keys
+                include:
+                  - "description": short explanation of what the command does
+                  - "usage": usage string
+                  - "examples": one or more example invocations
+                Example::
+                    {
+                        "en": {
+                            "description": "Shows the current XP and level of a user.",
+                            "usage": "/xp [user]",
+                            "examples": ["/xp", "/xp @User123"]
+                        },
+                        "pt": {
+                            "description": "Mostra o XP atual e o nível de um usuário.",
+                            "usage": "/xp [usuário]",
+                            "examples": ["/xp", "/xp @Usuario123"]
+                        }
                     }
-                }
         """
         self.name = name  
         self.translations = translations 
 
     def get_translation(self, language: str) -> Dict[str, Optional[str]]:
-        """
-        Retorna as traduções para o idioma especificado. Se não existir, retorna inglês como padrão.
+        """Return the help metadata for the requested language.
+
+        Falls back to English ("en") if the requested language is not available.
+        Returns an empty dict if neither is present.
 
         Args:
-            language (str): Código do idioma.
+            language: BCP‑47/ISO language code (e.g., "en", "pt-BR").
 
         Returns:
-            Dict[str, Optional[str]]: Dicionário com 'description', 'usage', e 'examples'.
+            A dict including keys such as "description", "usage", and "examples".
         """
         return self.translations.get(language, self.translations.get("en", {}))

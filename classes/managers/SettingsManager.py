@@ -9,8 +9,10 @@ from shared.types import ExtendedClient
 
 
 class SettingsManager:
-    """
-    Manager to handle guild and member settings, integrating with Guild and member classes.
+    """Facade for loading and saving guild- and member-level settings.
+
+    Delegates to `GuildManager` and `MemberManager` to materialize domain objects
+    and persist updates.
     """
 
     def __init__(self, client: ExtendedClient, logger: Optional[logging.Logger] = None):
@@ -20,8 +22,13 @@ class SettingsManager:
         self.member_manager = client.member_manager    # Assuming memberManager is attached to client
 
     async def load_guild_settings(self, guild_id: int) -> Optional[Guild]:
-        """
-        Loads settings for a guild and returns a Guild object.
+        """Load and return a `Guild` object with settings materialized.
+
+        Args:
+            guild_id: Discord guild id.
+
+        Returns:
+            A `Guild` object or None if loading fails.
         """
         self.logger.debug(f"Loading settings for guild {guild_id}...")
         guild = await self.guild_manager.fetch_or_create(guild_id)
@@ -33,8 +40,16 @@ class SettingsManager:
             return None
 
     async def save_guild_setting(self, guild_id: int, setting_id: str, value: Any):
-        """
-        Saves a specific setting for a guild.
+        """Persist a single guild setting.
+
+        Args:
+            guild_id: Discord guild id.
+            setting_id: Setting identifier.
+            value: New value to store.
+
+        Raises:
+            ValueError: If the guild cannot be loaded.
+            KeyError: If the setting id is unknown for that guild.
         """
         guild = await self.guild_manager.fetch_or_create(guild_id)
         if not guild:
@@ -48,32 +63,40 @@ class SettingsManager:
             raise
 
     async def load_member_settings(self, member_id: int, guild_id: int) -> Optional[Member]:
-        """
-        Loads settings for a member within a specific guild and returns a member object.
+        """Load and return a hydrated `Member` object with user settings.
+
+        This delegates to `MemberManager.fetch_or_create`, which ensures the
+        profile exists and resolves per‑user settings from module definitions.
+
+        Args:
+            member_id: Discord user id.
+            guild_id: Discord guild id.
+
+        Returns:
+            Hydrated `Member` or `None` if loading fails.
         """
         self.logger.debug(f"Loading settings for member {member_id} in guild {guild_id}...")
-        member_data = await self.member_manager.fetch_or_create(member_id, guild_id)
-        if member_data:
-            guild = await self.guild_manager.fetch_or_create(guild_id)
-            if not guild:
-                self.logger.error(f"Guild with ID {guild_id} not found for member {member_id}.")
-                return None
-            member = Member(
-                client=self.client,
-                member=guild.guild.get_member(member_id) or await guild.guild.fetch_member(member_id),
-                guild=guild,
-                settings=member_data.get("settings", {}),
-                data=member_data
-            )
+        try:
+            # This already returns a hydrated Member object with settings:
+            member = await self.member_manager.fetch_or_create(str(member_id), str(guild_id))
             self.logger.debug(f"Settings loaded for member {member_id} in guild {guild_id}.")
             return member
-        else:
-            self.logger.error(f"Failed to load settings for member {member_id} in guild {guild_id}.")
+        except Exception as e:
+            self.logger.error(f"Failed to load settings for member {member_id} in guild {guild_id}: {e}")
             return None
 
     async def save_member_setting(self, member_id: int, guild_id: int, setting_id: str, value: Any):
-        """
-        Saves a specific setting for a member within a guild.
+        """Persist a single member (user-scoped) setting.
+
+        Args:
+            member_id: Discord user id.
+            guild_id: Discord guild id.
+            setting_id: Setting identifier.
+            value: New value to store.
+
+        Raises:
+            ValueError: If the member cannot be loaded.
+            Exception: If persistence fails.
         """
         member = await self.member_manager.fetch_or_create(member_id, guild_id)
         if not member:

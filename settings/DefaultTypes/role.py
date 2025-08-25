@@ -13,10 +13,11 @@ from classes.structs.Guild import Guild
 from shared.types import ExtendedClient
 
 class RoleSetting(Setting[Role]):
-    """
-    A setting that allows the user to select a role from the guild.
-    """
+    """Interactive role selector.
 
+    Renders a dropdown with all non‑managed roles in the guild and persists the
+    selected role.
+    """
     def __init__(
         self,
         name: str,
@@ -31,6 +32,21 @@ class RoleSetting(Setting[Role]):
         locales: Optional[bool] = False,
         module_name: Optional[str] = None
     ):
+        """Initialize a RoleSetting.
+
+        Args:
+            name: Display name.
+            description: UX description.
+            id: Persistence key.
+            max_values: Max selectable roles.
+            min_values: Min selectable roles.
+            placeholder: Placeholder for the select.
+            embed_description: Optional description override.
+            color: Hex color for the embed.
+            value: Initial role.
+            locales: Enable i18n of display strings.
+            module_name: Module context for translations.
+        """
         super().__init__(name=name, description=description, locales=locales, module_name=module_name, id=id, type_="role")
         self.max_values = max_values
         self.min_values = min_values
@@ -44,8 +60,16 @@ class RoleSetting(Setting[Role]):
         self.module_name = module_name
 
     async def run(self, view: InteractionView) -> Role:
-        """
-        Runs the interactive session for selecting a role.
+        """Render the dropdown and return the chosen role.
+
+        Args:
+            view: Active interaction view.
+
+        Returns:
+            The selected `Role`.
+
+        Raises:
+            TimeoutError: If the selection is not completed in time.
         """
         guild_id = str(view.interaction.guild.id)
         translate = await view.client.translator.get_translator(guild_id=guild_id)
@@ -130,9 +154,7 @@ class RoleSetting(Setting[Role]):
 
 
     def clone(self) -> "RoleSetting":
-        """
-        Clone the current instance.
-        """
+        """Return a shallow clone preserving selector configuration."""
         return RoleSetting(
             name=self.name,
             description=self.description,

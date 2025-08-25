@@ -8,22 +8,33 @@ from logging import Logger
 from classes.structs.Module import Module
 
 class EventHandler:
-    """
-    Handler to dynamically load and register events from modules.
+    """Dynamic loader/registrar for module events.
+
+    Imports Python files from each module's `events` folder and registers exported
+    event listeners on the bot using `bot.add_listener`.
     """
 
     def __init__(self, bot: commands.Bot, logger: Logger):
+        """Initialize the handler.
+
+        Args:
+            bot: Discord.py bot (or ExtendedClient).
+            logger: Logger used for diagnostics.
+        """
         self.bot = bot
         self.logger = logger
 
     def load_events_from_module(self, module_name: str, events_path: Path, module: Module):
-        """
-        Loads and registers events from a specific module.
+        """Import and register event listeners from a module's `events` directory.
+
+        Each event file may expose an `exports` list of dicts with keys:
+            - "event": Discord.py event name (e.g., "on_message")
+            - "func": callable listener to be registered via `bot.add_listener`
 
         Args:
-            module_name (str): Name of the module.
-            events_path (Path): Path to the events folder within the module.
-            module (Module): The module instance.
+            module_name: Module's folder name (used to build import name).
+            events_path: Path to the module's events directory.
+            module: The owning :class:`Module` to record listeners against.
         """
         if not events_path.exists() or not events_path.is_dir():
             self.logger.warning(f"Events folder '{events_path}' not found for module '{module_name}'.")

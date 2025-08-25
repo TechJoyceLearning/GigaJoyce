@@ -6,16 +6,21 @@ from logging import Logger
 
 
 class EmojiManager:
+    """Loads and resolves emoji placeholders for global and module scopes.
+
+    Placeholders follow the pattern `:emoji_name:`. This manager supports a
+    global emoji catalog (single JSON file) and per‑module catalogs.
+    """
+
     EMOJI_PATTERN = re.compile(r":([a-zA-Z0-9_]+):")
 
     def __init__(self, bot, global_path: str, logger: Logger):
-        """
-        Inicializa o EmojiManager.
+        """Initialize the emoji manager.
 
         Args:
-            bot: Instância do bot.
-            global_path (str): Caminho para os emojis globais.
-            logger (Logger): Logger para mensagens de depuração e erro.
+            bot: The bot instance (for context; not required to resolve emojis).
+            global_path: Directory containing the `emojis.json` file.
+            logger: Logger for diagnostics.
         """
         self.bot = bot
         self.logger = logger
@@ -24,9 +29,7 @@ class EmojiManager:
         self.module_emojis: Dict[str, Dict[str, str]] = {}  # Emojis por módulo
 
     def load_global_emojis(self):
-        """
-        Carrega os emojis globais a partir do arquivo emoji.json.
-        """
+        """Load global emojis from `<global_path>/emojis.json`."""
         path = self.global_path / "emojis.json"
         if path.exists():
             with open(path, "r", encoding="utf-8") as f:
@@ -39,12 +42,11 @@ class EmojiManager:
             self.logger.warning("File emojis.json wasn't find for global emojis.")
 
     def load_module_emojis(self, module_name: str, module_path: str):
-        """
-        Carrega emojis específicos de um módulo.
+        """Load per‑module emojis from `<module_path>/emojis.json`.
 
         Args:
-            module_name (str): Nome do módulo.
-            module_path (str): Caminho para o módulo.
+            module_name: Name of the module to associate the catalog.
+            module_path: Filesystem path to the module root.
         """
         path = Path(module_path) / "emojis.json"
         if path.exists():
@@ -58,15 +60,14 @@ class EmojiManager:
             self.logger.warning(f"File emojis.json not found for the module: {module_name}")
 
     def replace_emojis(self, text: str, module_name: Optional[str] = None) -> str:
-        """
-        Substitui placeholders de emojis no texto com emojis reais.
+        """Replace `:emoji_name:` placeholders with actual emojis.
 
         Args:
-            text (str): Texto com placeholders de emojis.
-            module_name (Optional[str]): Nome do módulo (se aplicável).
+            text: The source text that may contain placeholders.
+            module_name: Optional module name to use a module‑specific catalog.
 
         Returns:
-            str: Texto com emojis substituídos.
+            The processed text with placeholders substituted.
         """
 
         def emoji_replacer(match):

@@ -1,0 +1,12 @@
+{
+  "name": "Economy",
+  "description": "Simple server economy: balances, add/remove/transfer, and transactions log.",
+  "version": "0.1.0",
+  "color": "#daccff",
+  "initFile": "main.py",
+  "commandsFolder": "commands",
+  "eventsFolder": "events",
+  "translationsFolder": "translations",
+  "emojisFolder": null,
+  "disabled": false
+}

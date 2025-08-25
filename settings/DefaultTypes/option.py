@@ -13,8 +13,10 @@ T = TypeVar("T")
 
 
 class OptionSetting(Setting[T], Generic[T]):
-    """
-    A setting that allows the user to select one option from a list of predefined settings.
+    """Single-choice setting built from a list of child `Setting`s.
+
+    Each option is represented by a child `Setting` used only for metadata
+    (name/id/value). The user selects one option via buttons.
     """
 
     def __init__(
@@ -28,6 +30,18 @@ class OptionSetting(Setting[T], Generic[T]):
         locales: Optional[bool] = False,
         module_name: Optional[str] = None
     ):
+        """Initialize an OptionSetting.
+
+        Args:
+            name: Display name.
+            description: UX description.
+            id: Persistence key.
+            options: List of child settings representing choices.
+            value: Initial selected value.
+            permission: Optional permission flag/bit.
+            locales: Enable i18n of display strings.
+            module_name: Module context for translations.
+        """
         super().__init__(name=name, description=description, id=id, locales=locales, module_name=module_name, permission=permission, type_="option")
         self.options = options
         self.value = value
@@ -58,8 +72,16 @@ class OptionSetting(Setting[T], Generic[T]):
                 option.apply_locale(translate_module)
 
     async def run(self, view: InteractionView) -> T:
-        """
-        Run an interactive session for the user to select one of the options.
+        """Render the selector and return the chosen option's value.
+
+        Args:
+            view: Active interaction view.
+
+        Returns:
+            The selected option value.
+
+        Raises:
+            TimeoutError: When the user does not choose in time.
         """
         language = await view.client.translator.get_language(view.interaction.guild.id)
         translate = view.client.translator.get_global(language)
@@ -148,14 +170,24 @@ class OptionSetting(Setting[T], Generic[T]):
         option = next((opt for opt in self.options if opt.value == value), None)
         return option.name if option else "N/A"
 
-    # def clone(self) -> "OptionSetting":
-    #     """
-    #     Create a clone of the current instance.
-    #     """
-    #     return OptionSetting(
-    #         name=self.name,
-    #         description=self.description,
-    #         id=self.id,
-    #         options=self.options,
-    #         value=self.value,
-    #     )
+    def clone(self) -> "OptionSetting[T]":
+        """Return a clone of this selector (options are shallow‑cloned).
+
+        Notes:
+            We clone each child option if it has `clone()`, otherwise we reuse
+            the instance (safe for read‑only metadata).
+        """
+        cloned_options: List[Setting[T]] = [
+            (opt.clone() if hasattr(opt, "clone") and callable(opt.clone) else opt)
+            for opt in self.options
+        ]
+        return OptionSetting(
+            name=self.name,
+            description=self.description,
+            id=self.id,
+            options=cloned_options,
+            value=self.value,
+            permission=self.permission,
+            locales=self.locales,
+            module_name=self.module_name,
+        )

@@ -12,8 +12,24 @@ T = TypeVar("T")
 
 
 class Setting(ABC, Generic[T]):
-    """
-    Base class for all settings.
+    """Abstract base class for all settings.
+
+    A `Setting[T]` represents a configurable value owned either by a **Guild**
+    or a **Member** (user). Subclasses define how the value is:
+    - **run** (collected/edited via UI),
+    - **serialized** to database (**parse_to_database**),
+    - **deserialized** from database (**parse_from_database** / **parse**).
+
+    Attributes:
+        name: Human‑readable name to display in UIs.
+        description: Short explanation of what this setting controls.
+        id: Unique identifier for persistence (used as the document field key).
+        type: String type label (e.g., "string", "boolean", "role", etc.).
+        value: Current in‑memory value (deserialized form).
+        permission: Optional permission bit/level required to change this setting.
+        locales: Whether this setting’s display strings should be translated.
+        module_name: Owning module name, if the setting belongs to a module.
+        kwargs: Extra configuration specific to a given concrete setting type.
     """
 
     def __init__(
@@ -40,53 +56,105 @@ class Setting(ABC, Generic[T]):
 
 
     def run(self, view: InteractionView) -> Awaitable[T]:
-        """
-        Executes the setting logic.
-        This method must be implemented in derived classes.
+        """Execute the interactive flow for this setting.
+
+        Implementations should render the necessary UI (buttons, selects, etc.)
+        and resolve with the updated value.
+
+        Args:
+            view: Active `InteractionView` used to present the UI.
+
+        Returns:
+            An awaitable that resolves to the new value of type `T`.
+
+        Raises:
+            NotImplementedError: If the subclass does not override this method.
         """
         raise NotImplementedError("Must be implemented in derived classes.")
-        pass
+
 
     def parse_to_database(self, value: T) -> Any:
-        """
-        Converts the value to a format suitable for database storage.
-        This method must be implemented in derived classes.
+        """Serialize the runtime value into a DB‑friendly representation.
+
+        This is the inverse of `parse_from_database`.
+
+        Args:
+            value: The runtime value.
+
+        Returns:
+            A JSON‑serializable value suitable for your database.
+
+        Raises:
+            NotImplementedError: If the subclass does not override this method.
         """
         raise NotImplementedError("Must be implemented in derived classes.")
-        pass
 
 
     def parse_from_database(self, config: Any) -> T:
-        """
-        Reconstructs the value from the database format.
-        This method must be implemented in derived classes.
+        """Reconstruct the runtime value from the DB representation.
+
+        This is the inverse of `parse_to_database`.
+
+        Args:
+            config: Raw stored value from the database.
+
+        Returns:
+            The deserialized runtime value of type `T`.
+
+        Raises:
+            NotImplementedError: If the subclass does not override this method.
         """
         raise NotImplementedError("Must be implemented in derived classes.")
-        pass
 
     async def parse(self, config: Any, client: ExtendedClient, guild_data: Any, guild: Guild) -> Awaitable[T]:
-        """
-        Parses the configuration data from the database or input.
-        This method must be implemented in derived classes.
+        """Optional async hook to parse a value with context.
+
+        Subclasses may override this to perform context‑aware parsing (e.g.
+        resolve IDs to Discord objects). Default behavior returns `config` as‑is.
+
+        Args:
+            config: Raw config value from DB or input.
+            client: Extended bot client.
+            guild_data: Raw guild document (for extra context if needed).
+            guild: Hydrated guild wrapper.
+
+        Returns:
+            The parsed value (usually of type `T`).
         """
         return config
 
-    # def parse_to_field(self, value: T) -> str:
-    #     """
-    #     Converts the value into a human-readable string for display purposes.
-    #     This method must be implemented in derived classes.
-    #     """
-    #     raise NotImplementedError("Must be implemented in derived classes.")
-    #     pass
+    async def save(self, client: ExtendedClient, entity: Union["Guild", "Member"], setting: "Setting[T]") -> bool:
+        """Persist the setting value using the client DB API.
 
-    def save(self, client: ExtendedClient, entity: Union["Guild", "Member"], setting: "Setting[T]") -> Awaitable[bool]:
-        """
-        Default method to save the value of a setting. This method can be overridden in derived classes.
+        Default behavior:
+          1. Serializes `setting.value` via `parse_to_database` if available.
+          2. Writes to:
+             - `guilds` collection with filter `{"_id": str(guild.id)}` when
+               `entity` is a `Guild`;
+             - `members` collection with filter `{"_id": str(member.id)}` when
+               `entity` is a `Member`.
+
+        Note:
+            If your schema uses different keys (e.g., composite keys
+            `{"id": ..., "guildId": ...}` for members), override this method in
+            your concrete setting type or adapt it at call‑site.
+
+        Args:
+            client: Extended bot client (exposes `client.db.update_one`).
+            entity: Guild or Member instance that owns the setting.
+            setting: The concrete `Setting` instance being saved.
+
+        Returns:
+            An awaitable that resolves truthy on success.
         """
         client.logger.debug(f"Using default save method for setting: {self.id}")
 
         if hasattr(setting, "parse_to_database") and callable(setting.parse_to_database):
-            value = setting.parse_to_database(setting.value)
+            if setting.value is not None:
+                value = setting.parse_to_database(setting.value)
+            else:
+                client.logger.warning(f"Setting value is None; storing as None in database.")
+                value = None
         else:
             client.logger.warning(f"Setting does not have a parse_to_database method. Using raw value.")
             value = setting.value
@@ -94,23 +162,39 @@ class Setting(ABC, Generic[T]):
         query = {f"settings.{setting.id}": value}
 
         if isinstance(entity, Guild):
-            return client.db.update_one(
+            result = await client.db.update_one(
                 "guilds",
                 {"_id": str(entity.id)},
                 {"$set": query},
             )
+            return bool(result)
         elif isinstance(entity, Member):
-            return client.db.update_one(
+            result = await client.db.update_one(
                 "members",
                 {"_id": str(entity.id)},
                 {"$set": query},
             )
+            return bool(result)
         else:
             raise TypeError("Entity must be a Guild or Member.")
 
     def apply_locale(self, translate_module: Callable[[str], str], clone: Optional[bool] = False) -> Union["Setting[T]", tuple[str, str, str]]:
-        """
-        Applies modular translation to all configurable fields.
+        """Apply module‑scoped translation to all display fields.
+
+        If `self.locales` is truthy, this will translate `name`, `description`,
+        and any string values inside `kwargs` using the provided function.
+
+        Args:
+            translate_module: Function that maps a translation key to its value.
+            clone: If True, returns a **new** translated copy of this setting;
+                otherwise returns a tuple `(name, description, kwargs)` with
+                translated values without mutating the instance.
+
+        Returns:
+            - If `clone=True`: a new `Setting` instance (same type) with fields
+              translated;
+            - If `clone=False`: a tuple `(name, description, kwargs)`; or
+            - If `self.locales` is falsy: `None`.
         """
         if self.locales:
             if clone:
@@ -131,16 +215,26 @@ class Setting(ABC, Generic[T]):
                 return name, description, kwargs
 
     def propagate_locales(self, child: "Setting[Any]"):
-        """
-        Propagates `locales` and `module_name` to child settings.
+        """Propagate `locales` and `module_name` flags to a child setting.
+
+        Useful when composite settings are composed of other settings and you
+        want consistent translation behavior across the hierarchy.
+
+        Args:
+            child: The setting that should inherit locale info.
         """
         if self.locales and self.module_name:
             child.locales = self.locales
             child.module_name = self.module_name
 
     def clone(self) -> "Setting[T]":
-        """
-        Returns a copy of the current setting instance.
+        """Return a shallow copy of this setting instance.
+
+        The copy is constructed by re‑invoking the concrete class `__init__`
+        with parameters that exist as attributes on `self`.
+
+        Returns:
+            A new instance of the concrete `Setting` subclass.
         """
         cls = self.__class__
         init_params = cls.__init__.__code__.co_varnames[1:]  # Ignora 'self'

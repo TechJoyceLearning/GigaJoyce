@@ -12,20 +12,38 @@ from classes.structs.Module import Module
 
 
 class CommandHandler:
-    """
-    Centralized handler for managing commands dynamically.
+    """Central registry and loader for module commands.
+
+    Dynamically imports command files, collects exported objects, and registers:
+      - Slash commands / groups into the app command tree
+      - Prefix commands into the bot
+      - Cogs (async add + bookkeeping)
+      - Detailed help entries
+      - Deferred Subcommand attachments (processed later)
     """
 
     def __init__(self, bot: commands.Bot, logger: Logger):
+        """Initialize the handler.
+
+        Args:
+            bot: Discord.py bot (or ExtendedClient).
+            logger: Logger used for diagnostics.
+        """
         self.bot = bot
         self.logger = logger
         self.pending_subcommands = []  # Queue for subcommands waiting for parent groups
         self.detailed_help = {}  # Store detailed help information
 
     async def load_commands_from_folder(self, folder: Path, base_package: str, module: Module):
-        """
-        Dynamically load all commands from a folder and its subfolders,
-        associating them with the given module.
+        """Import and register all command files found under a folder.
+
+        Recursively walks `folder`, imports each `.py` file as a module under
+        `base_package`, then processes its `exports` iterable (if present).
+
+        Args:
+            folder: Directory containing command files.
+            base_package: Python package prefix to assign to imports (e.g. "modules.foo.commands").
+            module: The owning :class:`Module` instance for bookkeeping.
         """
         if not folder.exists():
             self.logger.warning(f"Commands folder '{folder}' does not exist for module '{module.name}'.")
@@ -66,8 +84,20 @@ class CommandHandler:
                 await self.process_export(item, module)
 
     async def process_export(self, export: Any, module: Module):
-        """
-        Processes a single export and registers it accordingly, associating it with the module.
+        """Process a single exported symbol from a command file.
+
+        Supported export types:
+            - `app_commands.Command` / `app_commands.Group` → slash registration
+            - `commands.Command` → prefix command registration
+            - `commands.Cog` instance → async add, track commands
+            - `CommandHelp` → stored in `bot.detailed_help`
+            - `Subcommand` → queued and attached by `process_pending_subcommands`
+            - A class with `async def setup(bot)` → invoked
+            - A subclass of `commands.Cog` without `setup` → instantiated and added
+
+        Args:
+            export: The exported object to register.
+            module: The owning module.
         """
         if isinstance(export, app_commands.Command) or isinstance(export, app_commands.Group):
             self.register_slash_command(export, module)
@@ -103,8 +133,13 @@ class CommandHandler:
             self.logger.warning(f"Unrecognized export: {export} in module '{module.name}'")
 
     def register_slash_command(self, command: app_commands.Command | app_commands.Group, module: Module):
-        """
-        Registers a slash command or group to the bot's CommandTree and associates it with the module.
+        """Register a slash command or group into the bot's command tree.
+
+        Also records the command under `module.commands["slash"]`.
+
+        Args:
+            command: The slash command or group to add.
+            module: The owning module used for bookkeeping.
         """
         if isinstance(command, app_commands.Group):
             self.bot.tree.add_command(command)
@@ -116,16 +151,27 @@ class CommandHandler:
             module.commands["slash"][command.name] = command
 
     def register_regular_command(self, command: commands.Command, module: Module):
-        """
-        Registers a regular text-based command to the bot and associates it with the module.
+        """Register a text (prefix) command into the bot.
+
+        Also records the command under `module.commands["text"]`.
+
+        Args:
+            command: The command object to add via `bot.add_command`.
+            module: The owning module used for bookkeeping.
         """
         self.bot.add_command(command)
         self.logger.info(f"Registered regular command '{command.name}' in module '{module.name}'.")
         module.commands["text"][command.name] = command
 
     def register_subcommand(self, subcommand: Subcommand, module: Module):
-        """
-        Registers a Subcommand object to its parent group and associates it with the module.
+        """Queue a `Subcommand` for attachment to its parent group.
+
+        If the parent group does not yet exist, the subcommand is queued until
+        `process_pending_subcommands()` creates or finds the parent.
+
+        Args:
+            subcommand: The subcommand descriptor.
+            module: The owning module used for bookkeeping.
         """
         if subcommand.parent_name:
             self.pending_subcommands.append({
@@ -142,8 +188,10 @@ class CommandHandler:
             self.logger.warning(f"Subcommand '{subcommand.name}' has no parent group specified in module '{module.name}'.")
 
     def process_pending_subcommands(self):
-        """
-        Attaches all pending subcommands to their respective parent groups, associating them with their modules.
+        """Attach queued subcommands to their parent groups.
+
+        If a parent group is missing, creates it automatically and adds it to
+        the app command tree. Updates `module.commands["slash"]` accordingly.
         """
         for item in self.pending_subcommands[:]:
             parent = self.bot.tree.get_command(item["parent_name"])
@@ -169,8 +217,14 @@ class CommandHandler:
                 )
 
     async def _add_cog_async(self, cog_instance: commands.Cog, module: Module):
-        """
-        Asynchronously adds a cog to the bot.
+        """Add a Cog asynchronously and record its commands.
+
+        After adding the Cog, enumerates both text and slash commands available
+        from the Cog and stores them under `module.commands`.
+
+        Args:
+            cog_instance: Instantiated Cog to add.
+            module: The owning module used for bookkeeping.
         """
         try:
             await self.bot.add_cog(cog_instance)

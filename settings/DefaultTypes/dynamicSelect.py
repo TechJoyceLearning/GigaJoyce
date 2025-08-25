@@ -13,12 +13,12 @@ from settings.Setting import Setting
 from classes.structs.Member import Member
 
 def chunk_array(arr: List[Any], size: int) -> List[List[Any]]:
-    """
-    Chunk a list into smaller lists of a given size.
-    """
+    """Split a list into rows of `size`."""
     return [arr[i:i + size] for i in range(0, len(arr), size)]
 
 class DynamicSelectSetting(Setting[List[str]]):
+    """Split a list into rows of `size`."""
+
     def __init__(
         self,
         name: str,
@@ -31,6 +31,19 @@ class DynamicSelectSetting(Setting[List[str]]):
         value: Optional[List[str]] = None,
         permission: Optional[int] = None,
     ):
+        """Initialize a `DynamicSelectSetting`.
+
+        Args:
+            name: Display name.
+            description: Description text.
+            id: Persistence key.
+            get_fn: Callable that returns option labels for the current member.
+            max_values: Maximum options selectable.
+            min_values: Minimum options selectable.
+            style: "StringSelectMenu" or "Button".
+            value: Initial selection.
+            permission: Optional permission flag/bit.
+        """
         super().__init__(name=name, description=description, id=id, permission=permission, type_="dynamicSelect")
 
         self.get_fn = get_fn

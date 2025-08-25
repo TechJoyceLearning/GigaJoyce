@@ -9,8 +9,17 @@ import discord
 T = TypeVar("T")
 
 class ArraySetting(Setting[List[Any]]):
-    """
-    Represents a setting that holds an array of values and allows interactive modification.
+    """A composite setting that manages an array of values interactively.
+
+    This setting renders an embed with **Add**, **Remove**, and **Confirm** UI,
+    delegates item creation/edition to a child `Setting`, and optionally exposes
+    additional “general” settings as extra buttons.
+
+    Notes:
+        - The visual content can be customized via `embed_override` or
+          `update_fn`.
+        - If `locales=True` and `module_name` is set, text goes through the
+          module translator for i18n.
     """
 
     def __init__(
@@ -26,6 +35,20 @@ class ArraySetting(Setting[List[Any]]):
         locales: Optional[bool] = False,
         module_name: Optional[str] = None,
     ):
+        """Initialize an `ArraySetting`.
+
+        Args:
+            name: Human‑readable name.
+            description: Short explanation for help/UX.
+            id: Unique persistence key.
+            child: Setting used to create/edit **each** array item.
+            value: Initial list value.
+            general_settings: Optional settings exposed as extra buttons.
+            embed_override: Static embed to render instead of the default.
+            update_fn: Callable that builds a custom embed from current values.
+            locales: Enable i18n of display strings.
+            module_name: Module name for translation/emoji lookups.
+        """
         super().__init__(name=name, description=description, id=id, locales=locales, module_name=module_name, type_="array")
         self.child = child
         self.value = value or []
@@ -36,25 +59,41 @@ class ArraySetting(Setting[List[Any]]):
         self.module_name = module_name
 
     async def run(self, view: InteractionView) -> List[T]:
-        
+        """Run the interactive UI to modify the array.
+
+        Flow:
+            1. Render the embed (using `update_fn` or default renderer).
+            2. **Add** → delegates to `self.child.run(...)` and appends result.
+            3. **Remove** → shows a Select to remove an item by index.
+            4. **General** buttons → delegates to each provided setting.
+            5. **Confirm** → persists current state and ends the view.
+
+        Args:
+            view: Active `InteractionView` to render in.
+
+        Returns:
+            The final list of values.
+        """
         guild_id = str(view.interaction.guild.id)
         translate = await view.client.translator.get_translator(guild_id=guild_id)
 
         name, description, kwargs = self.name, self.description, self.kwargs
-        
-        print(f"PORRA DO VALUE ANTES DA FUNÇÃO LAMBDA: {self.value}")
+    
         translate_module = lambda value: value
 
-        print(f"PORRA DO VALUE ANTES DO TRANSLATE: {self.value}")
         if self.module_name and self.locales:
             translate_module = await view.client.translator.get_translator(guild_id=guild_id, module_name=self.module_name)
-            name, description, kwargs = self.apply_locale(translate_module=translate_module)
+            locale_result = self.apply_locale(translate_module=translate_module)
+            if isinstance(locale_result, tuple) and len(locale_result) == 3:
+                name, description, kwargs = locale_result
+            else:
+                name, description, kwargs = self.name, self.description, self.kwargs
 
         if hasattr(self, "child"):
             self.propagate_locales(self.child)
 
         current_values = self.value or []
-        print(f"PORRA DO VALUE DEPOIS DO TRANSLATE: {self.value}")
+
         def update_embed():
             if self.update_fn:
                 return self.update_fn(current_values)
@@ -70,7 +109,6 @@ class ArraySetting(Setting[List[Any]]):
                     description=description,
                     color=0x00FF00,
                 )
-                print(f"A PORRA DO VALOR DO SELF.VALUE: {self.value}")
                 for field in self.parse_to_field_list(translate):
                     embed.add_field(name=field["name"], value=field["value"], inline=field["inline"])
                 return embed

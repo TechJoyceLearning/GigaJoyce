@@ -14,6 +14,7 @@ from settings.Setting import Setting
 
 
 class MemberSetting(Setting[GuildMember]):
+    """Interactive setting to pick a guild member."""
     def __init__(
         self,
         name: str,
@@ -28,6 +29,21 @@ class MemberSetting(Setting[GuildMember]):
         locales: Optional[bool] = False,
         module_name: Optional[str] = None,
     ):
+        """Initialize a `MemberSetting`.
+
+        Args:
+            name: Display name.
+            description: Description text.
+            id: Persistence key.
+            max_select: Max users selectable.
+            min_select: Min users selectable.
+            placeholder: Custom placeholder text.
+            embed_description: Override for the embed description.
+            color: Hex embed color.
+            value: Preselected member.
+            locales: Enable i18n of display strings.
+            module_name: Module context for translations.
+        """
         super().__init__(name=name, description=description, locales=locales, module_name=module_name, id=id, type_="member")
         self.max = max_select
         self.min = min_select
@@ -116,18 +132,18 @@ class MemberSetting(Setting[GuildMember]):
         """
         ...
 
-    # def clone(self) -> "MemberSetting":
-    #     """
-    #     Clones the current setting instance.
-    #     """
-    #     return MemberSetting(
-    #         name=self.name,
-    #         description=self.description,
-    #         id=self.id,
-    #         max_select=self.max,
-    #         min_select=self.min,
-    #         placeholder=self.placeholder,
-    #         embed_description=self.embed_description,
-    #         color=self.color,
-    #         value=self.value,
-    #     )
+    def clone(self) -> "MemberSetting":
+        """
+        Clones the current setting instance.
+        """
+        return MemberSetting(
+            name=self.name,
+            description=self.description,
+            id=self.id,
+            max_select=self.max,
+            min_select=self.min,
+            placeholder=self.placeholder,
+            embed_description=self.embed_description,
+            color=self.color,
+            value=self.value,
+        )

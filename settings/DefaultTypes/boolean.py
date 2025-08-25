@@ -12,6 +12,17 @@ class BooleanSetting(Setting[bool]):
     """
 
     def __init__(self, name: str, description: str, id: str, value: Optional[bool] = None, color: str = "#ffffff", locales: Optional[bool] = False, module_name: Optional[str] = None):
+        """Initialize a `BooleanSetting`.
+
+        Args:
+            name: Display name.
+            description: Short explanation.
+            id: Persistence key.
+            value: Initial value (defaults to `False`).
+            color: Hex color to render the embed.
+            locales: Enable i18n of display strings.
+            module_name: Module context for translations.
+        """
         super().__init__(name=name, description=description, locales=locales, module_name=module_name, id=id, type_="boolean")
         self.value = value or False
         self.color = color
@@ -19,8 +30,12 @@ class BooleanSetting(Setting[bool]):
         self.module_name = module_name
 
     async def run(self, view: InteractionView) -> bool:
-        """
-        Interactively modifies the boolean setting.
+        """Render two buttons to toggle the boolean value.
+
+        Returns the final value when the view ends (or current value on timeout).
+
+        Args:
+            view: Active `InteractionView`.
         """
         guild_id = str(view.interaction.guild.id)
         translate = await view.client.translator.get_translator(guild_id=guild_id)
@@ -29,7 +44,12 @@ class BooleanSetting(Setting[bool]):
 
         if self.module_name and self.locales:
             translate_module = await view.client.translator.get_translator(guild_id=guild_id, module_name=self.module_name)
-            name, description, kwargs = self.apply_locale(translate_module=translate_module)
+            localized = self.apply_locale(translate_module=translate_module)
+            # If apply_locale returns a dict with keys 'name', 'description', 'kwargs'
+            if isinstance(localized, dict):
+                name = localized.get("name", name)
+                description = localized.get("description", description)
+                kwargs = localized.get("kwargs", kwargs)
             
         value = self.value
         embed = Embed(
@@ -46,8 +66,8 @@ class BooleanSetting(Setting[bool]):
         disable = Button(label=translate("disable"), custom_id="deactivate", style=ButtonStyle.secondary, disabled=not value)
 
     
-        async def button_callback(button_interaction: Interaction):
-            await button_interaction.response.defer()
+        async def button_callback(interaction: Interaction):
+            await interaction.response.defer()
             nonlocal value
             value = not value
             view.stop()
@@ -77,8 +97,3 @@ class BooleanSetting(Setting[bool]):
         """
         return value
 
-    # def clone(self) -> "BooleanSetting":
-    #     """
-    #     Returns a clone of the current setting.
-    #     """
-    #     return BooleanSetting(name=self.name, description=self.description, id=self.id, value=self.value, color=self.color)

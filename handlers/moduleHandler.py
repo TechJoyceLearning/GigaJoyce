@@ -10,23 +10,36 @@ import sys
 
 
 class ModuleHandler:
-    """
-    Responsible for discovering, initializing, and managing modules.
+    """Discover, initialize, and manage feature modules.
+
+    Scans the `./modules` directory, reads each module's `manifest.json`, executes the
+    module's `initFile` (usually `main.py`) and wires exported commands, events,
+    interface hooks and settings into the running bot.
     """
 
     def __init__(self, bot: ExtendedClient, logger: Logger):
+        """Initialize the handler.
+
+        Args:
+            bot: The extended Discord client.
+            logger: Logger used for diagnostics.
+        """
         self.bot = bot
         self.logger = logger
         self.modules_path = Path("./modules")
         self.loaded_modules: Dict[str, Module] = {}
         
     def register_permissions(self, module_name: str, permissions: List[str]):
-        """
-        Register permissions for a module.
+        """Register a list of permission nodes on behalf of a module.
+
+        Note:
+            This implementation registers nodes that always resolve to `True`.
+            Replace the lambda with proper checks (or namespace handlers) if your
+            modules rely on real permission enforcement.
 
         Args:
-            module_name (str): The name of the module.
-            permissions (List[str]): A list of permission strings to register.
+            module_name: Name of the module requesting the nodes.
+            permissions: Permission paths (e.g., "Feature.Admin.Purge", "Role.*").
         """
         for permission in permissions:
             try:
@@ -37,8 +50,15 @@ class ModuleHandler:
 
 
     async def load_modules(self, specific_module: Optional[str] = None):
-        """
-        Dynamically load all modules from the specified path.
+        """Load modules from disk and attach their commands/events.
+
+        Walks `self.modules_path`, reads each `manifest.json`, executes the module
+        setup file, builds a :class:`Module` instance and delegates:
+          - commands to `CommandHandler.load_commands_from_folder`
+          - events to `EventHandler.load_events_from_module`
+
+        Args:
+            specific_module: If provided, load only that folder name; otherwise load all.
         """
         modules_path = self.modules_path
 
@@ -120,14 +140,20 @@ class ModuleHandler:
         self.bot.modules = self.loaded_modules
 
     def _execute_setup(self, setup_file_path: Path) -> Optional[Dict[str, Any]]:
-        """
-        Executes the setup function from the module's init file.
+        """Execute the `setup(bot, logger)` function exported by the module init file.
+
+        The `setup` function should return a dict with any of:
+            - "interface": an object or dict with callable utilities the module exposes
+            - "settings": a list of guild‑scoped Setting instances
+            - "userSettings": a list of member‑scoped Setting instances
+            - "initFunc": optional callable to run after loading (stored on Module)
 
         Args:
-            setup_file_path (Path): Path to the init file.
+            setup_file_path: Absolute path to the module's init file.
 
         Returns:
-            Optional[Dict[str, Any]]: Dictionary containing 'interface', 'settings', and 'managers' if successful.
+            A dict with setup data, or `None` if the init file cannot be executed
+            or does not return a proper mapping.
         """
         if not setup_file_path.exists():
             self.logger.warning(f"Init file not found: {setup_file_path}")
@@ -164,8 +190,10 @@ class ModuleHandler:
             return None
 
     async def unload_modules(self):
-        """
-        Unloads all modules dynamically.
+        """Unload all modules that were previously loaded.
+
+        Calls each module's `unload(bot)` coroutine (if implemented), removes it
+        from the in‑memory registry, and logs results.
         """
         for module_name, module in list(self.loaded_modules.items()):
             try:
@@ -176,8 +204,9 @@ class ModuleHandler:
                 self.logger.error(f"Failed to unload module {module_name}: {e}")
 
     async def reload_modules(self):
-        """
-        Reloads all modules dynamically.
+        """Reload all modules by unloading then loading them again.
+
+        Useful during development or when hot‑reloading code on disk.
         """
         await self.unload_modules()
         await self.load_modules()
