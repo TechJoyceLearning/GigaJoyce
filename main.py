@@ -22,6 +22,7 @@ from utils.Translator import Translator
 from utils.EmojiManager import EmojiManager
 from modules.Defaults.permissionNamespace import *
 
+
 # -----------------------------------------------------------------------------
 # Argument Parsing
 # -----------------------------------------------------------------------------
@@ -32,8 +33,9 @@ def parse_args():
         Parsed arguments including the debug flag used to control logging verbosity.
     """
     parser = argparse.ArgumentParser(description="Discord Bot")
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     return parser.parse_args()
+
 
 # -----------------------------------------------------------------------------
 # Environment Setup
@@ -54,16 +56,19 @@ DEBUG_MODE = args.debug
 # Logging Configuration
 # -----------------------------------------------------------------------------
 log_level = logging.DEBUG if DEBUG_MODE else logging.INFO
-logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+logging.basicConfig(
+    level=log_level, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s"
+)
 logging.getLogger("discord").setLevel(logging.WARNING)
 logging.getLogger("pymongo").setLevel(logging.WARNING)
 logger = logging.getLogger("Bot")
 logger.info("Logger initialized.")
 
+
 # -----------------------------------------------------------------------------
 # Bot Initialization
 # -----------------------------------------------------------------------------
-class Bot(ExtendedClient): 
+class Bot(ExtendedClient):
     """Discord client with database, managers, handlers and i18n.
 
     Args:
@@ -76,11 +81,18 @@ class Bot(ExtendedClient):
         setting_cache: In‑memory cache for frequently accessed settings.
         ready: Indicates whether the bot finished the first on_ready cycle.
     """
+
     def __init__(self, logger: logging.Logger):
         intents = Intents.default()
-        intents.message_content = True 
+        intents.message_content = True
 
-        super().__init__(intents=intents, logger=logger, command_prefix="j!", owner_ids=OWNER_IDS, help_command=None)
+        super().__init__(
+            intents=intents,
+            logger=logger,
+            command_prefix="j!",
+            owner_ids=OWNER_IDS,
+            help_command=None,
+        )
 
         self.session: aiohttp.ClientSession = None
         self.db = None
@@ -98,11 +110,15 @@ class Bot(ExtendedClient):
         self.logger.info("Connecting to MongoDB...")
         try:
             self.db = MongoDBAsyncORM(uri=MONGODB_URI, db_name="GigaJoyce-Test")
-            await self.db.create_index("members", [("id", 1), ("guildId", 1)], unique=True)
+            await self.db.create_index(
+                "members", [("id", 1), ("guildId", 1)], unique=True
+            )
             self.db.members = self.db.get_collection("members")
             self.db.guilds = self.db.get_collection("guilds")
             self.db.users = self.db.get_collection("users")
-            self.logger.info("Successfully connected to the database and collected data.")
+            self.logger.info(
+                "Successfully connected to the database and collected data."
+            )
         except Exception as e:
             self.logger.error(f"Failed to connect to MongoDB: {e}")
             return
@@ -112,7 +128,7 @@ class Bot(ExtendedClient):
 
         # Initialize Managers
         self.logger.info("Initializing Managers...")
-        self.guild_manager= GuildManager(self, self.logger)
+        self.guild_manager = GuildManager(self, self.logger)
         self.member_manager = MemberManager(self, self.logger)
         self.settings_manager = SettingsManager(self, self.logger)
         self.permission_manager = PermissionsManager(self, self.logger)
@@ -128,15 +144,15 @@ class Bot(ExtendedClient):
         # Initialize EmojiManager
         self.logger.info("Initializing EmojiManager...")
         translations_path = Path("./shared/emojis")
-        self.emoji_manager = EmojiManager(self, translations_path, self.logger )
+        self.emoji_manager = EmojiManager(self, translations_path, self.logger)
         self.logger.info("EmojiManager initialized.")
-        
+
         # Initialize Translator
         self.logger.info("Initializing Translator...")
         translations_path = Path("./shared/translations")
-        self.translator = Translator(self, translations_path, self.logger )
+        self.translator = Translator(self, translations_path, self.logger)
         self.logger.info("Translator initialized.")
-  
+
         # Initialize Handlers
         self.logger.info("Initializing Handlers...")
         self.command_handler = CommandHandler(self, self.logger)
@@ -159,35 +175,48 @@ class Bot(ExtendedClient):
         or to skip syncing. Consider a non‑interactive flag for headless deployments.
         """
 
-        print("\nChoose a sync option for slash commands:")
-        print("1. Sync globally (all servers)")
-        print("2. Sync to a specific guild")
-        print(f"3. Sync to the test guild (ID: {TEST_GUILD_ID})")
-        print("4. Do not sync (skip this step)")
-        sync_choice = input("Enter your choice (1/2/3/4): ").strip()
-        # sync_choice = ""
+        sync_choice = "1"
+
+        # Only prompt if DISABLE_PROMPT var is not present
+        DISABLE_PROMPT = bool(os.getenv("DISABLE_PROMPT"))
+        sync_choice = "1"
+        if not DISABLE_PROMPT:
+            print("\nChoose a sync option for slash commands:")
+            print("1. Sync globally (all servers)")
+            print("2. Sync to a specific guild")
+            print(f"3. Sync to the test guild (ID: {TEST_GUILD_ID})")
+            print("4. Do not sync (skip this step)")
+            sync_choice = input("Enter your choice (1/2/3/4): ").strip()
+        else:
+            self.logger.info("Skipping interaction. Starting Global Sync...")
 
         try:
             if sync_choice == "1":
                 await self.tree.sync()
                 self.logger.info("Slash commands synced globally.")
             elif sync_choice == "2":
-                guild_ids = input("Enter guild IDs separated by commas: ").strip().split(",")
+                guild_ids = (
+                    input("Enter guild IDs separated by commas: ").strip().split(",")
+                )
                 for guild_id in guild_ids:
                     guild = Object(id=int(guild_id.strip()))
                     await self.tree.sync(guild=guild)
-                    self.logger.info(f"Slash commands synced to guild {guild_id.strip()}.")
+                    self.logger.info(
+                        f"Slash commands synced to guild {guild_id.strip()}."
+                    )
             elif sync_choice == "3":
                 guild = Object(id=TEST_GUILD_ID)
                 await self.tree.sync(guild=guild)
-                self.logger.info(f"Slash commands synced to test guild {TEST_GUILD_ID}.")
+                self.logger.info(
+                    f"Slash commands synced to test guild {TEST_GUILD_ID}."
+                )
             elif sync_choice == "4":
                 self.logger.info("Slash command synchronization skipped.")
             else:
                 print("Invalid choice. No sync performed.")
         except Exception as e:
             self.logger.error(f"Failed to sync slash commands: {e}")
-            
+
     async def _populate_language_cache(self):
         """Preload per‑guild language into the Translator cache."""
         self.logger.info("Populating language cache...")
@@ -197,7 +226,9 @@ class Bot(ExtendedClient):
                 guild_id = str(guild.id)
                 language = await self.guild_manager.get_language(guild_id)
                 self.translator.language_cache[guild_id] = language
-                self.logger.debug(f"Cached language '{language}' for guild '{guild_id}'")
+                self.logger.debug(
+                    f"Cached language '{language}' for guild '{guild_id}'"
+                )
         except Exception as e:
             self.logger.error(f"Error while populating language cache: {e}")
         self.logger.info("Language cache populated.")
@@ -221,7 +252,9 @@ class Bot(ExtendedClient):
         """
         if not self.ready:
             self.logger.info(f"Bot connected as {self.user}")
-            await self.change_presence(activity=Activity(type=ActivityType.watching, name="TechJoyce"))
+            await self.change_presence(
+                activity=Activity(type=ActivityType.watching, name="TechJoyce")
+            )
             await self._populate_language_cache()
             await self.translator.refresh_translation_cache()
             self.ready = True
@@ -236,6 +269,7 @@ class Bot(ExtendedClient):
         if self.db:
             await self.db.close()
         await super().close()
+
 
 # -----------------------------------------------------------------------------
 # Entry Point
@@ -254,6 +288,7 @@ async def main():
         logger.exception(f"Unexpected exception: {e}")
     finally:
         await bot.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
